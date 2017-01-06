@@ -3,16 +3,15 @@
 const Discord = require("discord.js");
 const bot = new Discord.Client();
 const settings = require("./settings.js");
+const ytdl = require('ytdl-core');
+const fs = require('fs');
+
 let dispatcher, userVoice; //That's the voice channel the bot is talking in
 
 //Debug
 const debug = function (msg) {
-    const userVoiceID = msg.member.voiceChannelID;
-    const userVoice = msg.guild.channels.get(userVoiceID);
-
-    msg.channel.sendMessage("```Debug executed, check console```");
-    msg.channel.sendMessage("user is currently in voice channel " + userVoice);
-    //console.log(userVoice);
+	
+	
 };
 //Ping, Pong!
 const ping = function (msg) {
@@ -22,6 +21,7 @@ const ping = function (msg) {
 const terminate = function (msg) {
     if (msg.author.id === settings.owner_id) {
         msg.channel.sendMessage("...I understand.");
+		disconnect;
         setTimeout(process.exit,1000);
     } else {
         msg.channel.sendMessage("Ha, no, fuck you!");
@@ -51,7 +51,28 @@ const play = function (msg) {
                 });
             });
         } else {
-            msg.channel.sendMessage("File/Meme not found.");
+            msg.channel.sendMessage("Trying to download Youtube Audio Stream");
+			var ytInfo = ytdl.getInfo(call[1], { filter: "audioonly" },function(err, info){
+				if(!err){
+					const userVoiceID = msg.member.voiceChannelID;
+					userVoice = msg.guild.channels.get(userVoiceID);
+					const stream = ytdl(call[1], { filter: "audioonly" });
+					
+					userVoice.join().then(connection => {
+						dispatcher = connection.playStream(stream);
+						dispatcher.on('speaking', (event, listener) => {
+							if (!event) {
+								userVoice.leave();
+								dispatcher = null;
+							}
+						});
+					});
+				} else {
+					msg.channel.sendMessage("Fehler!");
+					console.log(err);
+				}
+			});
+			
         }
 
     } else {
