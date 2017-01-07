@@ -9,13 +9,28 @@ const stream = require('stream');
 var playing = false;
 var queue = [];
 
-let dispatcher, userVoice; //That's the voice channel the bot is talking in
+let dispatcher, userVoice, VoiceConnection; //That's the voice channel the bot is talking in#
+
+function joinChannel(msg){
+	if(1 == 1){
+		const userVoiceID = msg.member.voiceChannelID;
+		userVoice = msg.guild.channels.get(userVoiceID);
+		userVoice.join().then(connection => {
+			VoiceConnection = connection;
+		});
+	}
+}
 
 function checkQueue(msg){
 	if(!playing && queue.length > 0){
+		joinChannel(msg);
 		var item = queue.shift();
-		playFromQueue(msg,item);
-	} 
+		setTimeout(function(){
+			playFromQueue(msg, VoiceConnection, item);
+		}, 1000);
+	} else if (!playing && dispatcher){
+		disconnect(msg);
+	}
 }
 
 function addtoQueue(msg,item){
@@ -23,36 +38,25 @@ function addtoQueue(msg,item){
 	msg.channel.sendMessage(item["name"] + " was added to queue! Position: " + parseInt(queue.length));
 }
 
-function nextInQueue(msg){
-	const userVoiceID = msg.member.voiceChannelID;
-	userVoice = msg.guild.channels.get(userVoiceID);
-	userVoice.leave();
-	dispatcher = null;
-	playing = false;	
-	checkQueue(msg);
-}
-
-function playFromQueue(msg,item){
+function playFromQueue(msg, VoiceConnection, item){
 	msg.channel.sendMessage("Now Playing: " + item["name"]);
-	const userVoiceID = msg.member.voiceChannelID;
-	userVoice = msg.guild.channels.get(userVoiceID);
-	userVoice.join().then(connection => {
-		if(item["stream"]){
-			dispatcher = connection.playStream(ytdl(item["value"], { 'filter': "audioonly",'quality':'lowest' }));			
-		} else {
-			dispatcher = connection.playFile(item["value"]);
-		}
-		
-		dispatcher.on('end',function(){
-			nextInQueue(msg);
-		});
-		
-		dispatcher.on('error',function(err){
-			console.log("dispatch error: " + err);
-			nextInQueue(msg);
-		});	
-		playing = true;		
+	if(item["stream"]){
+		dispatcher = VoiceConnection.playStream(ytdl(item["value"], { 'filter': "audioonly",'quality':'lowest' }));		
+	} else {
+		dispatcher = VoiceConnection.playFile(item["value"]);
+	}
+	
+	dispatcher.on('end',function(){
+		playing = false;	
+		checkQueue(msg);
 	});
+	
+	dispatcher.on('error',function(err){
+		console.log("dispatch error: " + err);
+		playing = false;	
+		checkQueue(msg);
+	});	
+	playing = true;
 };
 
 //Debug
@@ -121,15 +125,12 @@ const infoQueue = function(msg){
 		msgString += i + ": " + item["name"] + "\n";
 		i+=1;
 	});
+	
 	msg.channel.sendMessage(msgString);
 }
 
 const nextSong = function(msg){
-	const userVoiceID = msg.member.voiceChannelID;
-	userVoice = msg.guild.channels.get(userVoiceID);
-	userVoice.leave();
-	dispatcher = null;
-	playing = false;
+	dispatcher.end();
 }
 
 //Disconnect the bot from the voice channel.
