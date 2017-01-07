@@ -12,7 +12,8 @@ var queue = [];
 let dispatcher, userVoice, VoiceConnection; //That's the voice channel the bot is talking in#
 
 function joinChannel(msg){
-	if(1 == 1){
+	if(typeof VoiceConnection === 'undefined' || !VoiceConnection ){
+		console.log("connecting to channel")
 		const userVoiceID = msg.member.voiceChannelID;
 		userVoice = msg.guild.channels.get(userVoiceID);
 		userVoice.join().then(connection => {
@@ -26,8 +27,8 @@ function checkQueue(msg){
 		joinChannel(msg);
 		var item = queue.shift();
 		setTimeout(function(){
-			playFromQueue(msg, VoiceConnection, item);
-		}, 1000);
+			playFromQueue(msg, item);
+		}, 500);
 	} else if (!playing && dispatcher){
 		disconnect(msg);
 	}
@@ -38,25 +39,32 @@ function addtoQueue(msg,item){
 	msg.channel.sendMessage(item["name"] + " was added to queue! Position: " + parseInt(queue.length));
 }
 
-function playFromQueue(msg, VoiceConnection, item){
-	msg.channel.sendMessage("Now Playing: " + item["name"]);
-	if(item["stream"]){
-		dispatcher = VoiceConnection.playStream(ytdl(item["value"], { 'filter': "audioonly",'quality':'lowest' }));		
+function playFromQueue(msg, item){
+	if(typeof VoiceConnection !== 'undefined' && VoiceConnection ){
+		msg.channel.sendMessage("Now Playing: " + item["name"]);
+		if(item["stream"]){
+			dispatcher = VoiceConnection.playStream(ytdl(item["value"], { 'filter': "audioonly",'quality':'lowest' }));
+		} else {
+			dispatcher = VoiceConnection.playFile(item["value"]);
+		}
+		
+		dispatcher.on('end',function(){
+			playing = false;
+			checkQueue(msg);
+		});
+		
+		dispatcher.on('error',function(err){
+			console.log("dispatch error: " + err);
+			playing = false;	
+			checkQueue(msg);
+		});	
+		playing = true;
 	} else {
-		dispatcher = VoiceConnection.playFile(item["value"]);
-	}
-	
-	dispatcher.on('end',function(){
-		playing = false;	
-		checkQueue(msg);
-	});
-	
-	dispatcher.on('error',function(err){
-		console.log("dispatch error: " + err);
-		playing = false;	
-		checkQueue(msg);
-	});	
-	playing = true;
+		setTimeout(function(){
+			playFromQueue(msg, item);
+			console.log("retry");
+		}, 100);
+	}	
 };
 
 //Debug
@@ -71,7 +79,7 @@ const ping = function (msg) {
 const terminate = function (msg) {
     if (msg.author.id === settings.owner_id) {
         msg.channel.sendMessage("Ich hasse Montage :(");
-		disconnect;
+		disconnect(msg);
         setTimeout(process.exit,1000);
     } else {
         msg.channel.sendMessage("Alter! Ernsthaft! Halts Maul!");
@@ -117,14 +125,18 @@ const play = function (msg) {
 };
 
 const infoQueue = function(msg){
-	var msgString = "Currently in Queue: \n" ;
-	var i = 1;
-	var item;
-	
-	queue.forEach(function(item){
-		msgString += i + ": " + item["name"] + "\n";
-		i+=1;
-	});
+	if(queue.length > 0){
+		var msgString = "Currently in Queue: \n" ;
+		var i = 1;
+		var item;
+		
+		queue.forEach(function(item){
+			msgString += i + ": " + item["name"] + "\n";
+			i+=1;
+		});
+	} else {
+		var msgString = "There aren´t any items in the queue right now." ;
+	}
 	
 	msg.channel.sendMessage(msgString);
 }
@@ -133,13 +145,18 @@ const nextSong = function(msg){
 	dispatcher.end();
 }
 
+const flushQueue = function(msg){
+	queue = [];
+	nextSong(msg);
+}
+
 //Disconnect the bot from the voice channel.
 const disconnect = function (msg) {
     if (dispatcher) {
         dispatcher.end("Halted by user");
         userVoice.leave();
-        msg.channel.send("Left voice channel.");
         dispatcher = null;
+		VoiceConnection = null;
     } else {
         msg.channel.send("Not in a voice channel!");
     }
@@ -153,23 +170,16 @@ const userinfo = function (msg) {
     msg.channel.sendMessage(reply);
     */
 };
-//For the loods
-const fuck = function (msg) {
-    msg.channel.sendMessage("Wow, no, you l00d.");
-};
 
 const commands = {
     debug: debug,
     ping: ping,
     play: play,
 	next: nextSong,
+	flush: flushQueue,
 	queue: infoQueue,
-    disconnect: disconnect,
     dc: disconnect,
-    userinfo: userinfo,
-    fuck: fuck,
-    die: terminate,
-    terminate: terminate
+    die: terminate
 };
 
 bot.on("message", msg => {
