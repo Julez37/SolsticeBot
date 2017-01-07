@@ -5,26 +5,72 @@ const bot = new Discord.Client();
 const settings = require("./settings.js");
 const ytdl = require('ytdl-core');
 const fs = require('fs');
+const stream = require('stream');
+var playing = false;
+var queue = [];
 
 let dispatcher, userVoice; //That's the voice channel the bot is talking in
 
+function checkQueue(msg){
+	if(!playing && queue.length > 0){
+		var item = queue.shift();
+		playFromQueue(msg,item);
+	} 
+}
+
+function addtoQueue(msg,item){
+	queue.push(item);
+	msg.channel.sendMessage(item["name"] + " was added to queue! Position: " + parseInt(queue.length));
+}
+
+function nextInQueue(msg){
+	const userVoiceID = msg.member.voiceChannelID;
+	userVoice = msg.guild.channels.get(userVoiceID);
+	userVoice.leave();
+	dispatcher = null;
+	playing = false;	
+	checkQueue(msg);
+}
+
+function playFromQueue(msg,item){
+	msg.channel.sendMessage("Now Playing: " + item["name"]);
+	const userVoiceID = msg.member.voiceChannelID;
+	userVoice = msg.guild.channels.get(userVoiceID);
+	userVoice.join().then(connection => {
+		if(item["stream"]){
+			dispatcher = connection.playStream(ytdl(item["value"], { 'filter': "audioonly",'quality':'lowest' }));			
+		} else {
+			dispatcher = connection.playFile(item["value"]);
+		}
+		
+		dispatcher.on('end',function(){
+			nextInQueue(msg);
+		});
+		
+		dispatcher.on('error',function(err){
+			console.log("dispatch error: " + err);
+			nextInQueue(msg);
+		});	
+		playing = true;		
+	});
+};
+
 //Debug
-const debug = function (msg) {
-	
-	
+const debug = function (msg) {	
+	console.log("debug");
 };
 //Ping, Pong!
 const ping = function (msg) {
-    msg.channel.sendMessage("Pong!");
+    msg.channel.sendMessage("WOCHENENDE!");
 };
 //Stop the current node.js process with an exit message - if called by the bot owner, only. 
 const terminate = function (msg) {
     if (msg.author.id === settings.owner_id) {
-        msg.channel.sendMessage("...I understand.");
+        msg.channel.sendMessage("Ich hasse Montage :(");
 		disconnect;
         setTimeout(process.exit,1000);
     } else {
-        msg.channel.sendMessage("Ha, no, fuck you!");
+        msg.channel.sendMessage("Alter! Ernsthaft! Halts Maul!");
     }
 };
 //Play a predefined file (see files object)
@@ -35,50 +81,57 @@ const play = function (msg) {
     };
     var call = msg.content.substring(settings.prefix.length);
     call = call.split(" ");
+	
     if (call[1]) {
         var file = files[call[1]];
+		
         if (call[1].toLowerCase() in files) {
-            const userVoiceID = msg.member.voiceChannelID;
-            userVoice = msg.guild.channels.get(userVoiceID);
-            userVoice.join().then(connection => {
-                dispatcher = connection.playFile('./sounds/'+file);
-                console.log('./sounds/'+file);
-                dispatcher.on('speaking', (event, listener) => {
-                    if (!event) {
-                        userVoice.leave();
-                        dispatcher = null;
-                    }
-                });
-            });
-        } else {
-            msg.channel.sendMessage("Trying to download Youtube Audio Stream");
+			var item = {"name":call[1],"stream":false,"value":"./sounds/"+files[call[1]]};
+			addtoQueue(msg,item);
+			checkQueue(msg);
+			
+        } else if(call[1].startsWith("https://youtu.be") || call[1].startsWith("https://www.youtube.com")) {
+            msg.channel.sendMessage("Suche nach dem Video");
 			var ytInfo = ytdl.getInfo(call[1], { filter: "audioonly" },function(err, info){
 				if(!err){
-					const userVoiceID = msg.member.voiceChannelID;
-					userVoice = msg.guild.channels.get(userVoiceID);
-					const stream = ytdl(call[1], { filter: "audioonly" });
-					
-					userVoice.join().then(connection => {
-						dispatcher = connection.playStream(stream);
-						dispatcher.on('speaking', (event, listener) => {
-							if (!event) {
-								userVoice.leave();
-								dispatcher = null;
-							}
-						});
-					});
+					var item = {"name":info["title"],"stream":true,"value":call[1]};
+					addtoQueue(msg,item);
+					checkQueue(msg);
 				} else {
 					msg.channel.sendMessage("Fehler!");
 					console.log(err);
 				}
 			});
 			
-        }
+        } else {
+			msg.channel.sendMessage("Was kannst du eigentlich?");
+		}
 
     } else {
-        msg.channel.sendMessage("**REEEEEEEE**, it's `" + settings.prefix + "play [filename]`");
+        msg.channel.sendMessage("Wie dumm bist du? Es heißt `" + settings.prefix + "play [filename/link]`");
     }
 };
+
+const infoQueue = function(msg){
+	var msgString = "Currently in Queue: \n" ;
+	var i = 1;
+	var item;
+	
+	queue.forEach(function(item){
+		msgString += i + ": " + item["name"] + "\n";
+		i+=1;
+	});
+	msg.channel.sendMessage(msgString);
+}
+
+const nextSong = function(msg){
+	const userVoiceID = msg.member.voiceChannelID;
+	userVoice = msg.guild.channels.get(userVoiceID);
+	userVoice.leave();
+	dispatcher = null;
+	playing = false;
+}
+
 //Disconnect the bot from the voice channel.
 const disconnect = function (msg) {
     if (dispatcher) {
@@ -108,6 +161,8 @@ const commands = {
     debug: debug,
     ping: ping,
     play: play,
+	next: nextSong,
+	queue: infoQueue,
     disconnect: disconnect,
     dc: disconnect,
     userinfo: userinfo,
