@@ -87,61 +87,23 @@ function addtoQueue(msg,item){
 //Plays the topmost song in the queue
 function playFromQueue(msg, item){
 	if(typeof VoiceConnection !== 'undefined' && VoiceConnection ){
+		votes["Skip current Song"] = []; // reset vote skip
 		msg.channel.sendMessage("Now Playing: " + item["name"]);
 		currentlyPlaying = item["name"];
         setGame(item["name"]);
-		if(item["stream"]){
-			
-			var readable = ytdl(item["value"], { 'filter': 'audioonly','quality':'lowest' });
-			//var writable = "";
-			var s = new MyDuplex("",{});
-			console.log(readable);
-			
-			readable.on('readable', () => {
-				setTimeout(function(){
-					console.log("dispatcher start!");
-					dispatcher = VoiceConnection.playStream(s);
-					dispatcher.on('end',function(){
-						playing = false;
-						checkQueue(msg);
-					});
-					dispatcher.on('error',function(err){
-						console.log("dispatch error: " + err);
-					});	
-				}, 100);
-			});
-			readable.on('data', (chunk) => {
-				//writable += chunk;
-				s.write(chunk);
-				console.log(`Received ${chunk.length} bytes of data. now at ` + s["_readableState"].length);
-				/**
-				if(s["_readableState"].length > (500*1024)){
-					readable.pause();
-					s.push(null);
-					console.log(s);					
-				} 
-				
-				else if(s["_readableState"].length < (100*1024)){
-					readable.resume();
-				}
-				**/
-			});
-			readable.on('end', () => {
-				s.write(null);
-				console.log("reader fertig!");
-			});
-			readable.on('error', (err) => {
-				console.log("readable: " + err);
-			});
-			
-            
+		
+		if(item["stream"]){			
+			var readable = ytdl(item["value"], {'filter': 'audioonly'});
+			dispatcher = VoiceConnection.playStream(readable);			
 		} else {
 			dispatcher = VoiceConnection.playFile(item["value"]);
-			dispatcher.on('end',function(){
-				playing = false;
-				checkQueue(msg);
-			});
-		}		
+		}
+		
+		dispatcher.on('end',function(){
+			playing = false;
+			checkQueue(msg);
+		});
+		
 		/**
 		dispatcher.on('error',function(err){
 			console.log("dispatch error: " + err);
@@ -149,6 +111,7 @@ function playFromQueue(msg, item){
 			checkQueue(msg);
 		});	
 		**/
+		
 		playing = true;
 	} else {
 		setTimeout(function(){
